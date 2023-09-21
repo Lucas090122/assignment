@@ -8,4 +8,6 @@ while True:
         lst.append(num_1)
     except ValueError:
         print("Wrong input format, please enter a number.")
-print(sorted(lst, reverse= True)[:5])
+lst_sort = sorted(lst, reverse= True)
+for i in lst_sort[:5]:
+    print(i)
