@@ -30,4 +30,4 @@ connection = mysql.connector.connect(
 icao_1 = input("Please enter ICAO code of first airport:")
 icao_2 = input("Please enter ICAO code of second airport:")
 distance_of_airports = calculate_distance(icao_1, icao_2)
-print(f"The distance between these two airports is {distance_of_airports} km.")
+print(f"The distance between these two airports is around {distance_of_airports:.2f} km.")
