@@ -134,12 +134,27 @@ def generate_task(tutorial=False):
         offer_price = int(total_cost + 500)
         return Task(start_airport["name"], destination_airport["name"], 40, offer_price, distance)
 
-    start_airport = {"name": "Berlin", "coords": (52.5200, 13.4050)}
-    destination_airport = get_random_airport_from_db()
-    distance = geodesic(start_airport["coords"], destination_airport["coords"]).kilometers
-    offer_price = random.randint(int(distance * 10), int(distance * 20))
-    passengers = random.randint(10, 150)
-    return Task(start_airport["name"], destination_airport["name"], passengers, offer_price, distance)
+        # Get the maximum flight range and passenger capacity of the player's aircrafts
+    max_flight_range = max([aircraft.flight_range for aircraft in player.aircrafts])
+    max_passenger_capacity = max([aircraft.passenger_capacity for aircraft in player.aircrafts])
+
+    # Generate tasks until one matches the player's capabilities with some challenge
+    while True:
+        start_airport = get_random_airport_from_db()
+        destination_airport = get_random_airport_from_db()
+
+        # Ensure the start and destination airports are different
+        while start_airport["name"] == destination_airport["name"]:
+            destination_airport = get_random_airport_from_db()
+
+        distance = geodesic(start_airport["coords"], destination_airport["coords"]).kilometers
+        passengers = random.randint(10, 150)
+
+        # If the generated task is within the player's challenging capabilities, return it
+        if (distance <= max_flight_range * 1.1) and (
+                passengers <= max_passenger_capacity * 1.1):
+            offer_price = random.randint(int(distance * 10), int(distance * 20))
+            return Task(start_airport["name"], destination_airport["name"], passengers, offer_price, distance)
 
 
 # Display and purchase functions
@@ -157,6 +172,85 @@ def available_aircrafts_to_buy(player_instance):
         Aircraft("Ultimate Plane", 200, 2000, 50000)
     ]
     return [aircraft for aircraft in all_aircrafts if aircraft.name not in player_instance.purchased_aircraft_names]
+
+
+def register_user():
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    while True:
+        username = input("Enter your desired username: ")
+        password = input("Enter your password: ")
+
+        # Check if the username already exists
+        cursor.execute("SELECT id FROM user WHERE name = %s", (username,))
+        if cursor.fetchone():
+            print("This username is already taken. Please choose another one.")
+        else:
+            # Insert the new user
+            cursor.execute("INSERT INTO user (name, password) VALUES (%s, %s)", (username, password))
+
+            # Get the id of the newly registered user
+            user_id = cursor.lastrowid
+
+            # Assign the aircraft with id=1 to the user
+            cursor.execute("INSERT INTO user_aircrafts (user_id, aircraft_id) VALUES (%s, 1)", (user_id,))
+
+            connection.commit()
+            print(f"User {username} registered successfully!")
+            break
+
+    cursor.close()
+    connection.close()
+
+
+def login_user():
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    while True:
+        username = input("Enter your username: ")
+        password = input("Enter your password: ")
+
+        cursor.execute("SELECT id FROM user WHERE name = %s AND password = %s", (username, password))
+        user = cursor.fetchone()
+        if user:
+            print(f"Welcome back, {username}!")
+            cursor.close()
+            connection.close()
+            return user[0]
+        else:
+            print("Invalid username or password. Please try again.")
+
+
+def user_registration_or_login():
+    user_id = None
+    while True:
+        choice = input("\nDo you want to [R]egister or [L]ogin? (R/L): ").upper()
+        if choice == 'R':
+            register_user()
+            break
+        elif choice == 'L':
+            user_id = login_user()
+            if user_id:
+                return user_id
+            break
+        else:
+            print("Invalid choice. Please choose R for Register or L for Login.")
+
+def delete_current_user(user_id):
+    connection = get_database_connection()
+    cursor = connection.cursor()
+
+    # Delete the user's aircrafts from user_aircrafts table
+    cursor.execute("DELETE FROM user_aircrafts WHERE user_id = %s", (user_id,))
+
+    # Delete the user from user table
+    cursor.execute("DELETE FROM user WHERE id = %s", (user_id,))
+
+    connection.commit()
+    cursor.close()
+    connection.close()
 
 
 # Main game loop
@@ -190,52 +284,41 @@ def game_loop():
         if aircraft_choice == 0:
             continue
 
-        # Main Game Loop
-        while player.funds < 50000:
-            print(f"\nFunds: {player.funds}, Carbon Emissions: {player.carbon_emissions}\n")
-            task = generate_task()
-            print(f"New task: Fly from {task.start} to {task.destination}.")
-            print(f"Distance: {task.distance:.2f} km")
-            print(f"Carry {task.passengers} passengers for an offer of {task.offer_price} coins\n")
-            display_aircrafts(player.aircrafts)
-            aircraft_choice = int(input("Choose an aircraft by number (or 0 to skip task): "))
+        selected_aircraft = player.aircrafts[aircraft_choice - 1]
+        task_status, reason = player.complete_task(task, selected_aircraft)
+        if task_status:
+            print(f"\nTask completed using {selected_aircraft.name}! {reason}")
+        else:
+            print(f"\nTask failed with {selected_aircraft.name}! Reason: {reason}")
 
-            if aircraft_choice == 0:
-                continue
+        # After task completion, ask player for the next action
+        while True:
+            next_action = input(
+                "\nDo you want to [N]ext task, [S]hop for aircrafts, [C]heck funds, or [M]ain menu? (N/S/C/M): ").upper()
+            if next_action == 'S':
+                shop(player)
+            elif next_action == 'C':
+                print(f"\nYour current funds: {player.funds} coins")
+            elif next_action == 'M':
+                return  # Return to the main menu
+            else:                    break
 
-            selected_aircraft = player.aircrafts[aircraft_choice - 1]
-            task_status, reason = player.complete_task(task, selected_aircraft)
-            if task_status:
-                print(f"\nTask completed using {selected_aircraft.name}! {reason}")
-            else:
-                print(f"\nTask failed with {selected_aircraft.name}! Reason: {reason}")
-
-            # After task completion, ask player for the next action
-            while True:
-                next_action = input(
-                    "\nDo you want to [N]ext task, [S]hop for aircrafts, [C]heck funds, or [M]ain menu? (N/S/C/M): ").upper()
-                if next_action == 'S':
-                    shop(player)
-                elif next_action == 'C':
-                    print(f"\nYour current funds: {player.funds} coins")
-                elif next_action == 'M':
-                    return  # Return to the main menu
-                else:
-                    break
-
-        print(
-            "\nCongratulations! You've accumulated enough coins to purchase "
-            "the Ultimate Aircraft and complete the game!")
+    print(
+        "\nCongratulations! You've accumulated enough coins to purchase "
+        "the Ultimate Aircraft and complete the game!")
 
 
 def main_menu():
+    user_id = user_registration_or_login()
+
     while True:
         print("\n--- Main Menu ---")
         print("1. Start Game")
         print("2. Shop")
         print("3. View Aircraft Hangar")
         print("4. Leaderboard (Feature not implemented)")
-        print("5. Exit Game")
+        print("5. Delete Current Account")
+        print("6. Exit Game")
 
         choice = input("Enter your choice: ")
 
@@ -249,6 +332,13 @@ def main_menu():
             # Placeholder for the leaderboard feature
             print("\nFeature not implemented yet!")
         elif choice == '5':
+            confirm = input(
+                "\nAre you sure you want to delete your account? This action cannot be undone. (yes/no): ").lower()
+            if confirm == "yes":
+                delete_current_user(user_id)
+                print("\nAccount deleted successfully!")
+                user_id = user_registration_or_login()
+        elif choice == '6':
             print("\nThank you for playing!")
             break
         else:
